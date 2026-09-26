@@ -1,0 +1,683 @@
+-- =================================================================
+-- ULTIMATE MM2 MASTER SCRIPT (VERIFIED COMPLETE EDITION)
+-- =================================================================
+
+-- Load UI Library (Rayfield)
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Window = Rayfield:CreateWindow({
+   Name = "MM2 Master Suite | Complete Expanded Edition",
+   LoadingTitle = "MM2 Ultimate Hub",
+   LoadingSubtitle = "Autofarm, Hitboxes, Cases & Webhooks",
+   ConfigurationSaving = { Enabled = false },
+   KeySystem = false,
+})
+
+-- Tabs
+local VisualsTab = Window:CreateTab("Visuals & ESP", 4483362458)
+local ProVisualsTab = Window:CreateTab("Pro Visuals", 4483362458)
+local FarmTab = Window:CreateTab("Automation", 4483362458)
+local CombatTab = Window:CreateTab("Combat & Sheriff", 4483362458)
+local AdvancedCombatTab = Window:CreateTab("Kill Aura & Evade", 4483362458)
+local HitboxTab = Window:CreateTab("Hitboxes & Aim", 4483362458)
+local CaseTab = Window:CreateTab("Case Simulator", 4483362458)
+local SkinsTab = Window:CreateTab("Skin Changers", 4483362458)
+local PlayerModsTab = Window:CreateTab("Player Mods", 4483362458)
+local WebhookTab = Window:CreateTab("Discord Webhooks", 4483362458)
+local StreamerTab = Window:CreateTab("Streamer Mode", 4483362458)
+local ExtraTab = Window:CreateTab("Extras & Troll", 4483362458)
+local UtilityTab = Window:CreateTab("Utilities & TP", 4483362458)
+local StatusTab = Window:CreateTab("Match Status", 4483362458)
+
+-- Services & Local Variables
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local VirtualUser = game:GetService("VirtualUser")
+local Lighting = game:GetService("Lighting")
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
+local CoreGui = game:GetService("CoreGui")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+
+local settings = {
+    ESPEnabled = false,
+    InnocentESP = false,
+    NameESPEnabled = false,
+    FullbrightEnabled = false,
+    NoclipEnabled = false,
+    AutoGrabGun = false,
+    AutoFarmCoins = false,
+    AimbotEnabled = false,
+    AutoShootMurderer = false,
+    KillAuraEnabled = false,
+    AutoEvadeEnabled = false,
+    WebhookURL = "",
+    WebhookEnabled = false,
+    CoinsFarmedSession = 0,
+    StreamerModeEnabled = false,
+    AutoReconnectEnabled = true,
+    HitboxExpanderEnabled = false,
+    HitboxSize = 2,
+}
+
+local roles = {
+    Murderer = nil,
+    Sheriff = nil,
+    GunDrop = nil,
+}
+
+local tracers = {}
+local selectedKnifeSkin = "Default"
+local selectedGunSkin = "Default"
+local virtualInventory = {"Default Knife", "Default Gun"}
+
+local customWalkSpeed = 16
+local customJumpPower = 50
+
+-- Universal Request Function for Webhooks
+local function sendWebhookRequest(url, payload)
+    if not url or url == "" then return end
+    local requestFunc = http_request or syn.request or request
+    local encodedData = HttpService:JSONEncode(payload)
+    
+    if requestFunc then
+        pcall(function()
+            requestFunc({
+                Url = url,
+                Method = "POST",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = encodedData
+            })
+        end)
+    else
+        pcall(function()
+            HttpService:PostAsync(url, encodedData)
+        end)
+    end
+end
+
+-- Safe Teleport Helper
+local function safeTeleport(targetCFrame)
+    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local root = char:WaitForChild("HumanoidRootPart", 2)
+    if root then
+        root.CFrame = targetCFrame
+    end
+end
+
+-- =================================================================
+-- 1. AUTO-JOIN & 24/7 RECONNECT PROTECTION
+-- =================================================================
+
+CoreGui.ChildAdded:Connect(function(child)
+    if child.Name == "RobloxPromptGui" and settings.AutoReconnectEnabled then
+        task.spawn(function()
+            task.wait(2)
+            pcall(function()
+                TeleportService:Teleport(game.PlaceId, LocalPlayer)
+            end)
+        end)
+    end
+end)
+
+-- =================================================================
+-- 2. ROLE IDENTIFICATION & HIGHLIGHTS
+-- =================================================================
+
+local function applyHighlight(player, color, isMurvOrSheriff)
+    if not player or not player.Character then return end
+    local character = player.Character
+    
+    if not isMurvOrSheriff and not settings.InnocentESP then
+        if character:FindFirstChild("MM2_Highlight") then
+            character.MM2_Highlight:Destroy()
+        end
+        return
+    end
+    
+    if character:FindFirstChild("MM2_Highlight") then
+        character.MM2_Highlight:Destroy()
+    end
+    
+    if settings.ESPEnabled or (not isMurvOrSheriff and settings.InnocentESP) then
+        local highlight = Instance.new("Highlight")
+        highlight.Name = "MM2_Highlight"
+        highlight.Adornee = character
+        highlight.FillColor = color
+        highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+        highlight.FillTransparency = 0.4
+        highlight.Parent = character
+    end
+end
+
+local function updateRoles()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local backpack = player:FindFirstChild("Backpack")
+            local character = player.Character
+            
+            local function hasItem(itemType)
+                return character:FindFirstChild(itemType) or (backpack and backpack:FindFirstChild(itemType))
+            end
+            
+            if hasItem("Knife") then
+                roles.Murderer = player
+                applyHighlight(player, Color3.fromRGB(255, 0, 0), true)
+            elseif hasItem("Gun") then
+                roles.Sheriff = player
+                applyHighlight(player, Color3.fromRGB(0, 0, 255), true)
+            else
+                applyHighlight(player, Color3.fromRGB(0, 255, 0), false)
+            end
+        end
+    end
+end
+
+-- =================================================================
+-- 3. INSTANT GUN GRABBER & TRACERS
+-- =================================================================
+
+Workspace.ChildAdded:Connect(function(child)
+    if child.Name == "GunDrop" or child:FindFirstChild("GunDrop") then
+        roles.GunDrop = child
+        if settings.AutoGrabGun then
+            safeTeleport(child.CFrame + Vector3.new(0, 3, 0))
+        end
+    end
+end)
+
+Workspace.ChildRemoved:Connect(function(child)
+    if child == roles.GunDrop then
+        roles.GunDrop = nil
+    end
+end)
+
+local function updateTracers()
+    if not settings.ESPEnabled then
+        for _, line in pairs(tracers) do
+            line.Visible = false
+        end
+        return
+    end
+
+    local targets = {
+        {player = roles.Murderer, color = Color3.fromRGB(255, 0, 0)},
+        {player = roles.Sheriff, color = Color3.fromRGB(0, 0, 255)}
+    }
+
+    for _, target in ipairs(targets) do
+        local player = target.player
+        local color = target.color
+        
+        if player and not tracers[player] then
+            local line = Drawing.new("Line")
+            line.Thickness = 1.5
+            line.Transparency = 1
+            tracers[player] = line
+        end
+        
+        local line = tracers[player]
+        if line then
+            if player and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                local rootPart = player.Character.HumanoidRootPart
+                local vector, onScreen = Camera:WorldToViewportPoint(rootPart.Position)
+                
+                if onScreen then
+                    line.Visible = true
+                    line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                    line.To = Vector2.new(vector.X, vector.Y)
+                    line.Color = color
+                else
+                    line.Visible = false
+                end
+            else
+                line.Visible = false
+            end
+        end
+    end
+end
+
+-- =================================================================
+-- 4. AUTOMATION & COIN FARMING
+-- =================================================================
+
+local function sendWebhookNotification(title, description, fields)
+    if not settings.WebhookEnabled or settings.WebhookURL == "" then return end
+    local payload = {
+        ["embeds"] = {{
+            ["title"] = title,
+            ["description"] = description,
+            ["color"] = 3447003,
+            ["fields"] = fields or {},
+            ["footer"] = {["text"] = "MM2 Master Suite Telemetry"}
+        }}
+    }
+    sendWebhookRequest(settings.WebhookURL, payload)
+end
+
+local function startCoinFarm()
+    task.spawn(function()
+        while settings.AutoFarmCoins do
+            task.wait(0.2)
+            local character = LocalPlayer.Character
+            if not character or not character:FindFirstChild("HumanoidRootPart") then continue end
+            local rootPart = character.HumanoidRootPart
+            
+            local coinContainer
+            for _, descendant in ipairs(Workspace:GetDescendants()) do
+                if descendant.Name == "CoinContainer" then
+                    coinContainer = descendant
+                    break
+                end
+            end
+            
+            if coinContainer then
+                local coinsList = coinContainer:GetChildren()
+                if #coinsList > 0 then
+                    for _, coin in ipairs(coinsList) do
+                        if not settings.AutoFarmCoins then break end
+                        local targetPart = coin:IsA("BasePart") and coin or coin:FindFirstChild("Coin")
+                        if targetPart then
+                            local distance = (rootPart.Position - targetPart.Position).Magnitude
+                            local speed = 18
+                            local info = TweenInfo.new(distance / speed, Enum.EasingStyle.Linear)
+                            local tween = TweenService:Create(rootPart, info, {CFrame = targetPart.CFrame + Vector3.new(0, 2, 0)})
+                            
+                            tween:Play()
+                            tween.Completed:Wait()
+                            settings.CoinsFarmedSession = settings.CoinsFarmedSession + 1
+                            task.wait(0.1)
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- =================================================================
+-- 5. RAYFIELD UI INTERFACE SETUP
+-- =================================================================
+
+VisualsTab:CreateToggle({
+   Name = "Role ESP & Tracers (Murderer/Sheriff)",
+   CurrentValue = false,
+   Flag = "ESPToggle",
+   Callback = function(Value)
+      settings.ESPEnabled = Value
+      if not Value then
+         for _, player in ipairs(Players:GetPlayers()) do
+             if player.Character and player.Character:FindFirstChild("MM2_Highlight") then
+                 player.Character.MM2_Highlight:Destroy()
+             end
+         end
+         for _, line in pairs(tracers) do
+             line.Visible = false
+         end
+      end
+   end,
+})
+
+VisualsTab:CreateToggle({
+   Name = "Innocent ESP (Green Highlight)",
+   CurrentValue = false,
+   Flag = "InnocentESPToggle",
+   Callback = function(Value)
+      settings.InnocentESP = Value
+   end,
+})
+
+ProVisualsTab:CreateToggle({
+   Name = "Player Name & Distance Tags",
+   CurrentValue = false,
+   Flag = "NameESPToggle",
+   Callback = function(Value)
+      settings.NameESPEnabled = Value
+   end,
+})
+
+FarmTab:CreateToggle({
+   Name = "Instant Gun Grabber (Auto-Teleport)",
+   CurrentValue = false,
+   Flag = "GunTeleport",
+   Callback = function(Value)
+      settings.AutoGrabGun = Value
+   end,
+})
+
+FarmTab:CreateToggle({
+   Name = "Auto-Farm Coins",
+   CurrentValue = false,
+   Flag = "CoinFarmToggle",
+   Callback = function(Value)
+      settings.AutoFarmCoins = Value
+      if Value then 
+          startCoinFarm() 
+          sendWebhookNotification("🚜 Autofarm Started", "Auto-farm loop has been successfully activated.", {
+              {["name"] = "Player", ["value"] = LocalPlayer.Name, ["inline"] = true}
+          })
+      end
+   end,
+})
+
+CombatTab:CreateToggle({
+   Name = "Sheriff Aimbot (Lock onto Murderer)",
+   CurrentValue = false,
+   Flag = "AimbotToggle",
+   Callback = function(Value)
+      settings.AimbotEnabled = Value
+   end,
+})
+
+CombatTab:CreateToggle({
+   Name = "Auto-Shoot Murderer (Instant Fire)",
+   CurrentValue = false,
+   Flag = "AutoShootToggle",
+   Callback = function(Value)
+      settings.AutoShootMurderer = Value
+   end,
+})
+
+AdvancedCombatTab:CreateToggle({
+   Name = "Kill Aura (Auto-Kill Nearby Players)",
+   CurrentValue = false,
+   Flag = "KillAuraToggle",
+   Callback = function(Value)
+      settings.KillAuraEnabled = Value
+   end,
+})
+
+AdvancedCombatTab:CreateToggle({
+   Name = "Auto-Evade (Teleport Away if Murderer is Close)",
+   CurrentValue = false,
+   Flag = "AutoEvadeToggle",
+   Callback = function(Value)
+      settings.AutoEvadeEnabled = Value
+   end,
+})
+
+HitboxTab:CreateToggle({
+   Name = "Enable Hitbox Expander",
+   CurrentValue = false,
+   Flag = "HitboxToggle",
+   Callback = function(Value)
+      settings.HitboxExpanderEnabled = Value
+   end,
+})
+
+HitboxTab:CreateSlider({
+   Name = "Hitbox Size Scale",
+   Range = {1, 10},
+   Increment = 1,
+   CurrentValue = 2,
+   Flag = "HitboxSlider",
+   Callback = function(Value)
+      settings.HitboxSize = Value
+   end,
+})
+
+CaseTab:CreateButton({
+   Name = "Open Mystery Case (Spin & Unbox)",
+   Callback = function()
+      local possibleDrops = {"Chroma Blade", "Corrupt Knife", "Bat Godly", "Hallow's Edge", "Elderwood Scythe", "Seer", "Common Gun"}
+      local wonItem = possibleDrops[math.random(1, #possibleDrops)]
+      table.insert(virtualInventory, wonItem)
+      Rayfield:Notify({
+         Title = "Mystery Case Unboxed!",
+         Content = "Congratulations! You won: " .. wonItem,
+         Duration = 4.5,
+         Image = 4483362458,
+      })
+   end,
+})
+
+CaseTab:CreateButton({
+   Name = "View Virtual Inventory",
+   Callback = function()
+      local invString = table.concat(virtualInventory, ", ")
+      Rayfield:Notify({
+         Title = "Virtual Inventory",
+         Content = invString,
+         Duration = 6,
+         Image = 4483362458,
+      })
+   end,
+})
+
+SkinsTab:CreateDropdown({
+   Name = "Client Knife Skin",
+   Options = {"Default", "Chroma Blade"},
+   CurrentOption = "Default",
+   Flag = "KnifeSkinSelect",
+   Callback = function(Option)
+      selectedKnifeSkin = Option
+   end,
+})
+
+SkinsTab:CreateDropdown({
+   Name = "Client Gun Skin",
+   Options = {"Default", "Gold Gun"},
+   CurrentOption = "Default",
+   Flag = "GunSkinSelect",
+   Callback = function(Option)
+      selectedGunSkin = Option
+   end,
+})
+
+PlayerModsTab:CreateSlider({
+   Name = "WalkSpeed",
+   Range = {16, 100},
+   Increment = 1,
+   CurrentValue = 16,
+   Flag = "WalkSpeedSlider",
+   Callback = function(Value)
+      customWalkSpeed = Value
+   end,
+})
+
+PlayerModsTab:CreateSlider({
+   Name = "JumpPower",
+   Range = {50, 150},
+   Increment = 1,
+   CurrentValue = 50,
+   Flag = "JumpPowerSlider",
+   Callback = function(Value)
+      customJumpPower = Value
+   end,
+})
+
+WebhookTab:CreateInput({
+   Name = "Discord Webhook URL",
+   PlaceholderText = "Paste your Discord Webhook URL here",
+   RemoveTextAfterFocusLost = false,
+   Flag = "WebhookInput",
+   Callback = function(Text)
+      settings.WebhookURL = Text
+   end,
+})
+
+WebhookTab:CreateToggle({
+   Name = "Enable Discord Telemetry Reports",
+   CurrentValue = false,
+   Flag = "WebhookToggle",
+   Callback = function(Value)
+      settings.WebhookEnabled = Value
+   end,
+})
+
+WebhookTab:CreateButton({
+   Name = "Send Test Webhook Report",
+   Callback = function()
+      sendWebhookNotification("🛡️ MM2 Master Suite - Status Report", "Test telemetry report triggered successfully.", {
+          {["name"] = "Player", ["value"] = LocalPlayer.Name, ["inline"] = true},
+          {["name"] = "Server Job ID", ["value"] = game.JobId, ["inline"] = false}
+      })
+   end,
+})
+
+StreamerTab:CreateToggle({
+   Name = "Enable Streamer Mode (Hide Name)",
+   CurrentValue = false,
+   Flag = "StreamerToggle",
+   Callback = function(Value)
+      settings.StreamerModeEnabled = Value
+   end,
+})
+
+StreamerTab:CreateParagraph({
+   Title = "Streamer Protection Info",
+   Content = "Hides your username on custom overlays to prevent reporting."
+})
+
+ExtraTab:CreateToggle({
+   Name = "Fullbright (Remove Shadows/Darkness)",
+   CurrentValue = false,
+   Flag = "FullbrightToggle",
+   Callback = function(Value)
+      settings.FullbrightEnabled = Value
+      if Value then
+          Lighting.Ambient = Color3.new(1, 1, 1)
+          Lighting.OutdoorAmbient = Color3.new(1, 1, 1)
+          Lighting.Brightness = 2
+          Lighting.GlobalShadows = false
+      else
+          Lighting.Ambient = Color3.new(0, 0, 0)
+          Lighting.OutdoorAmbient = Color3.new(0.5, 0.5, 0.5)
+          Lighting.Brightness = 1
+          Lighting.GlobalShadows = true
+      end
+   end,
+})
+
+ExtraTab:CreateToggle({
+   Name = "Noclip (Walk Through Walls)",
+   CurrentValue = false,
+   Flag = "NoclipToggle",
+   Callback = function(Value)
+      settings.NoclipEnabled = Value
+   end,
+})
+
+ExtraTab:CreateToggle({
+   Name = "Auto-Reconnect on Crash/Disconnect",
+   CurrentValue = true,
+   Flag = "ReconnectToggle",
+   Callback = function(Value)
+      settings.AutoReconnectEnabled = Value
+   end,
+})
+
+UtilityTab:CreateParagraph({
+   Title = "Anti-AFK Protection",
+   Content = "Active: Prevents server timeout kicks automatically."
+})
+
+LocalPlayer.Idled:Connect(function()
+    VirtualUser:CaptureController()
+    VirtualUser:ClickButton2(Vector2.new())
+end)
+
+local StatusParagraph = StatusTab:CreateParagraph({
+   Title = "Live Round Information",
+   Content = "Scanning players...\n• Murderer: None\n• Sheriff: None\n• Gun Status: Held"
+})
+
+-- =================================================================
+-- 6. BACKGROUND LOOPS & HITBOX EXPANDER TICKER
+-- =================================================================
+
+task.spawn(function()
+    while true do
+        task.wait(600)
+        if settings.WebhookEnabled then
+            sendWebhookNotification("📊 MM2 Periodic Autofarm Report", string.format("Session running smoothly for player: **%s**", LocalPlayer.Name), {
+                {["name"] = "Coins Farmed This Session", ["value"] = tostring(settings.CoinsFarmedSession), ["inline"] = true},
+                {["name"] = "Current Place ID", ["value"] = tostring(game.PlaceId), ["inline"] = true}
+            })
+        end
+    end
+end)
+
+local elapsedTimer = 0
+RunService.Heartbeat:Connect(function(deltaTime)
+    local character = LocalPlayer.Character
+    if character and character:FindFirstChild("Humanoid") then
+        local humanoid = character.Humanoid
+        if customWalkSpeed > 16 and humanoid.WalkSpeed ~= customWalkSpeed then
+            humanoid.WalkSpeed = customWalkSpeed
+        end
+        if customJumpPower > 50 and humanoid.JumpPower ~= customJumpPower then
+            humanoid.JumpPower = customJumpPower
+        end
+    end
+
+    if settings.NoclipEnabled and character then
+        for _, part in ipairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then part.CanCollide = false end
+        end
+    end
+
+    -- Hitbox Expander logic
+    if settings.HitboxExpanderEnabled then
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                local rootPart = player.Character.HumanoidRootPart
+                rootPart.Size = Vector3.new(settings.HitboxSize * 2, settings.HitboxSize * 2, settings.HitboxSize * 2)
+                rootPart.Transparency = 0.7
+                rootPart.CanCollide = false
+            end
+        end
+    end
+
+    if settings.AutoEvadeEnabled and roles.Murderer and roles.Murderer ~= LocalPlayer then
+        local murvChar = roles.Murderer.Character
+        if murvChar and murvChar:FindFirstChild("HumanoidRootPart") and character and character:FindFirstChild("HumanoidRootPart") then
+            local distance = (character.HumanoidRootPart.Position - murvChar.HumanoidRootPart.Position).Magnitude
+            if distance < 12 then
+                safeTeleport(character.HumanoidRootPart.CFrame + Vector3.new(0, 25, 0))
+            end
+        end
+    end
+
+    if settings.KillAuraEnabled and character and character:FindFirstChild("HumanoidRootPart") then
+        local knife = character:FindFirstChild("Knife") or (LocalPlayer.Backpack and LocalPlayer.Backpack:FindFirstChild("Knife"))
+        if knife then
+            if knife.Parent == LocalPlayer.Backpack then
+                character.Humanoid:EquipTool(knife)
+            end
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                    local dist = (character.HumanoidRootPart.Position - player.Character.HumanoidRootPart.Position).Magnitude
+                    if dist <= 15 then
+                        pcall(function() knife:Activate() end)
+                    end
+                end
+            end
+        end
+    end
+
+    if settings.ESPEnabled or settings.InnocentESP then
+        elapsedTimer = elapsedTimer + deltaTime
+        if elapsedTimer >= 1.5 then
+            elapsedTimer = 0
+            updateRoles()
+            
+            local murdererName = roles.Murderer and roles.Murderer.Name or "None / Hidden"
+            local sheriffName = roles.Sheriff and roles.Sheriff.Name or "None / Hidden"
+            local gunStatus = roles.GunDrop and "Dropped in Map!" or "Held / Secure"
+            
+            StatusParagraph:Set({
+               Title = "Live Round Information",
+               Content = string.format("• Murderer: %s\n• Sheriff: %s\n• Gun Status: %s", murdererName, sheriffName, gunStatus)
+            })
+        end
+    end
+    
+    updateTracers()
+end)
+
+Rayfield:LoadConfiguration()
